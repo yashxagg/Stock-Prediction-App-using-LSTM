@@ -1,0 +1,14 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Virtual Environments
+venv/
+env/
+.env
+
+# Streamlit local config/secrets
+.streamlit/
+
+# User-specific VS Code settings
+.vscode/
