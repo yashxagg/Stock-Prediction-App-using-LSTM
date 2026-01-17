@@ -6,10 +6,10 @@ import yfinance as yf
 import plotly.graph_objects as go
 from datetime import date, timedelta
 from stock_utils import get_stock_data, preprocess_data
-from model_utils import create_lstm_model, train_model, predict_future
+from model_utils import create_lstm_model, train_model, predict_future, calculate_metrics
 
 # Set page config
-st.set_page_config(layout="wide", page_title="NSE Stock Forecaster", page_icon="📈")
+st.set_page_config(layout="wide", page_title="Stock AI", page_icon="📈")
 
 
 # Custom CSS for Light Theme
@@ -81,6 +81,24 @@ with st.sidebar:
 
     with st.expander("🤖 Model Settings", expanded=True):
         forecast_days = st.slider("Forecast Horizon (Days)", 5, 60, 10, help="How many days into the future to predict.")
+        
+        training_mode = st.select_slider(
+            "Training Mode",
+            options=["Fast", "Balanced", "Precise"],
+            value="Balanced",
+            help="Fast: Less accurate, quick (15 epochs). Precise: Very accurate, slow (60 epochs)."
+        )
+        
+        # Map modes to settings
+        if training_mode == "Fast":
+            epochs_val = 15
+            units_val = 50
+        elif training_mode == "Balanced":
+            epochs_val = 30
+            units_val = 64
+        else: # Precise
+            epochs_val = 60
+            units_val = 96
         
     st.markdown("---")
     run_btn = st.button("🚀 Run Forecast", use_container_width=True)
@@ -201,17 +219,20 @@ if run_btn:
             progress_bar.progress(40)
             
             # 3. Create & Train Model
-            model = create_lstm_model((X_train.shape[1], 1))
+            model = create_lstm_model((X_train.shape[1], 1), units=units_val)
             
-            with st.spinner("Training LSTM Model... This may take a moment."):
-                # Reduced epochs for demo speed, increase for accuracy
-                train_model(model, X_train, y_train, epochs=5, batch_size=32)
+            with st.spinner(f"Training Model ({training_mode} Mode)..."):
+                # Increased epochs for better accuracy
+                train_model(model, X_train, y_train, epochs=epochs_val, batch_size=32)
                 
             progress_bar.progress(80)
             status_text.markdown('<p class="status-text" style="color: #1976d2;">### Status: 🤖 Model Trained. Forecasting...</p>', unsafe_allow_html=True)
             
+            # Calculate Metrics
+            rmse, mape = calculate_metrics(model, X_train, y_train, scaler)
+            
             # 4. Predict
-            last_sequence = data['Close'].values[-60:]
+            last_sequence = data['Close'].values[-90:]
             last_sequence_scaled = scaler.transform(last_sequence.reshape(-1, 1))
             
             predictions = predict_future(model, last_sequence_scaled, scaler, days=forecast_days)
@@ -300,5 +321,98 @@ if run_btn:
                 hovermode="closest"
             )
             st.plotly_chart(fig_pred, use_container_width=True)
+
+            # --- Accuracy Section ---
+            st.markdown("---")
+            st.subheader("🎯 Model Accuracy Metrics")
+            ac1, ac2 = st.columns(2)
+            with ac1:
+                st.info(f"**Root Mean Squared Error (RMSE):** {rmse:.4f}")
+            with ac2:
+                st.info(f"**Mean Absolute Percentage Error (MAPE):** {mape:.2%}")
             
-            st.warning("Note: This is a simplified demo. Actual stock market prediction is extremely complex and risky. Do not use this for real financial decisions.")
+            # --- Yearly Trend Analysis ---
+            st.markdown("---")
+            st.subheader("📅 Yearly Trend Analysis")
+            st.caption("Analysis based on historical daily close prices.")
+            
+            df_trend = data.copy()
+            df_trend['Year'] = df_trend.index.year
+            years = df_trend['Year'].unique()
+            years = sorted(years, reverse=True) # Show newest first
+            
+            # Create rows of 3 columns
+            cols = st.columns(3)
+            for idx, year in enumerate(years):
+                year_data = df_trend[df_trend['Year'] == year]
+                if year_data.empty: continue
+                
+                # Handle potential DataFrame/Series issues
+                try:
+                    close_data = year_data['Close']
+                    open_data = year_data['Open'] if 'Open' in year_data.columns else year_data['Close']
+                    high_data = year_data['High'] if 'High' in year_data.columns else year_data['Close']
+                    low_data = year_data['Low'] if 'Low' in year_data.columns else year_data['Close']
+
+                    # Ensure we have Series
+                    if isinstance(close_data, pd.DataFrame): close_data = close_data.iloc[:, 0]
+                    if isinstance(open_data, pd.DataFrame): open_data = open_data.iloc[:, 0]
+                    if isinstance(high_data, pd.DataFrame): high_data = high_data.iloc[:, 0]
+                    if isinstance(low_data, pd.DataFrame): low_data = low_data.iloc[:, 0]
+                    
+                    first_price = float(close_data.iloc[0])
+                    last_price = float(close_data.iloc[-1])
+                    high_price = float(high_data.max())
+                    low_price = float(low_data.min())
+                    
+                    change_pct = ((last_price - first_price) / first_price) * 100
+                    is_bullish = last_price > first_price
+                    trend_icon = "📈" if is_bullish else "📉"
+                    trend_label = "Bullish" if is_bullish else "Bearish"
+                    trend_color = "#00c853" if is_bullish else "#d32f2f"
+                    bg_color = "rgba(0, 200, 83, 0.05)" if is_bullish else "rgba(211, 47, 47, 0.05)"
+                    border_color = "rgba(0, 200, 83, 0.2)" if is_bullish else "rgba(211, 47, 47, 0.2)"
+                    
+                    # Calculate position for range bar
+                    total_range = high_price - low_price
+                    if total_range == 0: total_range = 1
+                    current_pos_pct = ((last_price - low_price) / total_range) * 100
+                    
+                    with cols[idx % 3]:
+                        st.markdown(f"""
+<div style="padding: 20px; border-radius: 12px; border: 1px solid {border_color}; margin-bottom: 20px; background-color: {bg_color}; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+<h3 style="margin:0; color: #333; font-weight: 700;">{year}</h3>
+<span style="background: {trend_color}; color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.8em; font-weight: bold;">{trend_icon} {trend_label}</span>
+</div>
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+<div>
+<div style="font-size: 0.75em; color: #666; text-transform: uppercase;">Return</div>
+<div style="font-size: 1.1em; font-weight: bold; color: {trend_color};">{change_pct:+.2f}%</div>
+</div>
+<div>
+<div style="font-size: 0.75em; color: #666; text-transform: uppercase;">Close</div>
+<div style="font-size: 1.1em; font-weight: bold; color: #333;">₹{last_price:.0f}</div>
+</div>
+</div>
+<div style="background: rgba(0,0,0,0.05); height: 6px; border-radius: 3px; position: relative; margin: 15px 0 5px 0;">
+<div style="position: absolute; left: {current_pos_pct}%; top: -4px; width: 14px; height: 14px; background: {trend_color}; border: 2px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"></div>
+</div>
+<div style="display: flex; justify-content: space-between; font-size: 0.75em; color: #888;">
+<span>L: ₹{low_price:.0f}</span>
+<span>H: ₹{high_price:.0f}</span>
+</div>
+</div>
+""", unsafe_allow_html=True)
+                except Exception as e:
+                    st.error(f"Error calculating trend for {year}: {e}")
+
+
+            
+            st.markdown("---")
+            st.error("⚠️ **DISCLAIMER: NOT FINANCIAL ADVICE**")
+            st.markdown("""
+            > This application is for **educational and demonstration purposes only**. The predictions generated by this LSTM model are based solely on historical data and do not account for external market factors, news, or economic indicators.
+            >
+            > **Trading stocks involves a high risk of loss.** You should not rely on this tool for making financial decisions. Always consult with a qualified financial advisor before making any investment choices. The developer assumes no responsibility for any financial losses incurred.
+            """)

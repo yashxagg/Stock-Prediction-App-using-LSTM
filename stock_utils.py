@@ -16,7 +16,7 @@ def get_stock_data(ticker, start, end):
         return None
     return data
 
-def preprocess_data(data, sequence_length=60):
+def preprocess_data(data, sequence_length=90):
     """
     Preprocesses data for LSTM model.
     Returns: X_train, y_train, scaler

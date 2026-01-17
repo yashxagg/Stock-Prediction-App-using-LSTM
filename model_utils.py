@@ -3,20 +3,22 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, LSTM, Dropout
+from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
+import math
 
-def create_lstm_model(input_shape):
+def create_lstm_model(input_shape, units=50):
     """
     Creates and compiles an LSTM model.
     """
     model = Sequential()
     
-    model.add(LSTM(units=50, return_sequences=True, input_shape=input_shape))
+    model.add(LSTM(units=units, return_sequences=True, input_shape=input_shape))
     model.add(Dropout(0.2))
     
-    model.add(LSTM(units=50, return_sequences=True))
+    model.add(LSTM(units=units, return_sequences=True))
     model.add(Dropout(0.2))
     
-    model.add(LSTM(units=50))
+    model.add(LSTM(units=units))
     model.add(Dropout(0.2))
     
     model.add(Dense(units=1))
@@ -55,3 +57,22 @@ def predict_future(model, last_sequence, scaler, days=30):
     future_predictions = scaler.inverse_transform(future_predictions)
     
     return future_predictions
+
+def calculate_metrics(model, X, y, scaler):
+    """
+    Calculates RMSE and MAPE metrics.
+    """
+    # Predict
+    predictions = model.predict(X)
+    
+    # Inverse transform
+    predictions = scaler.inverse_transform(predictions)
+    y_true = scaler.inverse_transform(y.reshape(-1, 1))
+    
+    # RMSE
+    rmse = math.sqrt(mean_squared_error(y_true, predictions))
+    
+    # MAPE
+    mape = mean_absolute_percentage_error(y_true, predictions)
+    
+    return rmse, mape
