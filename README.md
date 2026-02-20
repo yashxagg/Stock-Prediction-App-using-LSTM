@@ -35,8 +35,8 @@ Predicting stock prices is a complex time-series problem. Unlike standard regres
 ## ⚙️ Installation & Usage
 ### 1. Clone the repository.
 ```bash
-git clone https://github.com/yashxagg/Fintech-Credit-Risk-Engine.git
-cd Fintech-Credit-Risk-Engine
+git clone https://github.com/yashxagg/Stock-Prediction-App-using-LSTM.git
+cd Stock-Prediction-App-using-LSTM
 ```
 ### 2. Install dependencies.
 ```bash
